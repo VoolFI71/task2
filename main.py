@@ -17,27 +17,27 @@ app = FastAPI()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 DATABASE_URL = Cfg.URL
-engine= create_engine(DATABASE_URL, echo=False)
-SessionLocal =  sessionmaker(autocommit=False, autoflush=False, bind=engine)
+engine= create_async_engine(DATABASE_URL, echo=False)
+SessionLocal =  async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def get_db() -> Session:
-    with SessionLocal()  as session:
+async def get_db() -> AsyncSession:
+    async with SessionLocal()  as session:
         yield session
 
 @app.post("/transaction/")
-def create_transaction(transaction: TransactionCreate, db: Session = Depends(get_db), token=Depends(oauth2_scheme)):
+async def create_transaction(transaction: TransactionCreate, db: AsyncSession = Depends(get_db), token=Depends(oauth2_scheme)):
     payload = auth.decode_access_token(token)
     username = payload.get("sub")
     if username is None or username!=transaction.from_user:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    result = db.execute(
+    result = await db.execute(
         text("SELECT * FROM users WHERE username = :username"),
         {"username": transaction.from_user}
     )
     from_user = result.fetchone()
 
-    result = db.execute(
+    result = await db.execute(
         text("SELECT * FROM users WHERE username = :username"),
         {"username": transaction.to_user}
     )
@@ -53,11 +53,11 @@ def create_transaction(transaction: TransactionCreate, db: Session = Depends(get
     new_from_balance = from_user.balance - transaction.amount
     new_to_balance = to_user.balance + transaction.amount
 
-    db.execute(
+    await db.execute(
         text("UPDATE users SET balance = :balance WHERE username = :username"),
         {"balance": new_from_balance, "username": transaction.from_user}
     )
-    db.execute(
+    await db.execute(
         text("UPDATE users SET balance = :balance WHERE username = :username"),
         {"balance": new_to_balance, "username": transaction.to_user}
     )
@@ -67,7 +67,7 @@ def create_transaction(transaction: TransactionCreate, db: Session = Depends(get
     amount=transaction.amount
     date=datetime.now()
 
-    db.execute(
+    await db.execute(
         text("INSERT INTO transactions (from_user, to_user, amount, date) VALUES (:from_user, :to_user, :amount, :date)"),
         {
             "from_user": from_user,
@@ -78,13 +78,13 @@ def create_transaction(transaction: TransactionCreate, db: Session = Depends(get
     )
 
 
-    db.commit() 
+    await db.commit() 
 
-    return {"message": "Транзакция успешна", "from_user_balance": new_from_balance, "to_user_balance": new_to_balance}
+    return {"message": "Транзакция успешна", "fromas_user_balance": new_from_balance, "to_user_balance": new_to_balance}
 
 @app.post("/add/{user}")
-def create_transaction(user: str, db: Session = Depends(get_db)):
-    result = db.execute(
+async def create_transaction(user: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
         text("SELECT * FROM users WHERE username = :username"),
         {"username": user}
     )
@@ -95,20 +95,20 @@ def create_transaction(user: str, db: Session = Depends(get_db)):
 
     new_balance = to_user.balance + 50
 
-    db.execute(
+    await db.execute(
         text("UPDATE users SET balance = :balance WHERE username = :username"),
         {"balance": new_balance, "username": user}
     )
-    db.commit() 
+    await db.commit() 
 
     return {"message": "Транзакция успешна", "new_balance": new_balance}
 
 @app.get("/list/")
-def check_trans(
+async def check_trans(
     limit: int = 10,
     token: str = Depends(oauth2_scheme),
     status: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     payload = auth.decode_access_token(token)
     username = payload.get("sub")
@@ -125,7 +125,7 @@ def check_trans(
         LIMIT {limit*2}
     """)
 
-    all_transactions = db.execute(base_query, {"username": username}).fetchall()
+    all_transactions = await db.execute(base_query, {"username": username}).fetchall()
 
     # Применяем фильтрацию по статусу
     filtered_transactions = []
