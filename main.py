@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy import create_engine
-from config.settings import Config
+from config.settings import Cfg
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
@@ -16,7 +16,7 @@ from datetime import datetime
 app = FastAPI()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-DATABASE_URL = Config.URL
+DATABASE_URL = Cfg.URL
 engine= create_engine(DATABASE_URL, echo=False)
 SessionLocal =  sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -62,10 +62,10 @@ def create_transaction(transaction: TransactionCreate, db: Session = Depends(get
         {"balance": new_to_balance, "username": transaction.to_user}
     )
 
-    from_user=transaction.from_user,
-    to_user=transaction.to_user,
-    amount=transaction.amount,
-    date = datetime.now()
+    from_user=transaction.from_user
+    to_user=transaction.to_user
+    amount=transaction.amount
+    date=datetime.now()
 
     db.execute(
         text("INSERT INTO transactions (from_user, to_user, amount, date) VALUES (:from_user, :to_user, :amount, :date)"),
