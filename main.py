@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import Optional
 import auth 
+import logging
 from datetime import datetime
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+)
 
 app = FastAPI()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -26,9 +32,13 @@ async def get_db() -> AsyncSession:
 
 @app.post("/transaction/")
 async def create_transaction(transaction: TransactionCreate, db: AsyncSession = Depends(get_db), token=Depends(oauth2_scheme)):
+    logging.info("Получен запрос на создание транзакции от пользователя: %s", transaction.from_user)
+
     payload = auth.decode_access_token(token)
     username = payload.get("sub")
     if username is None or username!=transaction.from_user:
+        logging.warning("Недействительный токен или имя пользователя не совпадает.")
+
         raise HTTPException(status_code=401, detail="Invalid token")
 
     result = await db.execute(
@@ -44,10 +54,13 @@ async def create_transaction(transaction: TransactionCreate, db: AsyncSession = 
     to_user = result.fetchone()
 
     if to_user is None:
+        logging.warning("Получатель не найден: %s", transaction.to_user)
+
         raise HTTPException(status_code=404, detail="Получатель не найден")
 
 
     if from_user.balance < transaction.amount:
+        logging.warning("Недостаточно средств для пользователя: %s", transaction.from_user)
         raise HTTPException(status_code=400, detail="Недостаточно средств")
 
     new_from_balance = from_user.balance - transaction.amount
@@ -80,10 +93,14 @@ async def create_transaction(transaction: TransactionCreate, db: AsyncSession = 
 
     await db.commit() 
 
+    logging.info("Транзакция успешна: %s -> %s, сумма: %s", transaction.from_user, transaction.to_user, transaction.amount)
+
     return {"message": "Транзакция успешна", "fromas_user_balance": new_from_balance, "to_user_balance": new_to_balance}
 
 @app.post("/add/{user}")
 async def create_transaction(user: str, db: AsyncSession = Depends(get_db)):
+    logging.info("Получен запрос на список для токена.")
+
     result = await db.execute(
         text("SELECT * FROM users WHERE username = :username"),
         {"username": user}
@@ -114,6 +131,7 @@ async def check_trans(
     username = payload.get("sub")
 
     if username is None:
+        logging.warning("Недействительный токен при попытке получить список транзакций.")
         raise HTTPException(status_code=401, detail="Invalid token")
 
     # выбираем limit*2 последних транзакций
@@ -151,6 +169,8 @@ async def check_trans(
         status_text = "Отправленные платежи"
     else:
         status_text = "Все платежи"
+
+    logging.info("Возвращаем список транзакций для пользователя: %s, статус: %s, количество: %d", username, status_text, len(transaction_list))
 
     return {
         "Статус платежа": status_text,
